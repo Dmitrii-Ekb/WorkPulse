@@ -1,41 +1,90 @@
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+var tasks = new List<WorkTask>();
+
+app.MapGet("/hello", () =>
 {
-    app.MapOpenApi();
-}
+    return "Привет, это мой АПИ";
+});
 
-app.UseHttpsRedirection();
-
-var summaries = new[]
+app.MapGet("/tasks", () =>
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    return tasks;
+});
 
-app.MapGet("/weatherforecast", () =>
+app.MapGet("/tasks/first", () =>
+{
+    return tasks[0];
+});
+
+app.MapGet("/tasks/{id}", (int id) =>
+{
+    var task = tasks.FirstOrDefault(task => task.Id == id);
+
+    if (task is null)
     {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
-    })
-    .WithName("GetWeatherForecast");
+        return Results.NotFound();
+    }
+    
+    return Results.Ok(task);
+});
+
+app.MapPost("/tasks", (WorkTask task) =>
+{
+    if (string.IsNullOrWhiteSpace(task.Title))
+    {
+        return Results.BadRequest("Название задачи обязательно");
+    }
+    
+    if (tasks.Count == 0)
+    {
+        task.Id = 1;
+    }
+    else
+    {
+        task.Id = tasks.Max(existingTask => existingTask.Id) + 1;
+    }
+    
+    tasks.Add(task);
+    return Results.Created($"/tasks/{task.Id}", task);
+});
+
+app.MapPatch("/tasks/{id}/complete", (int id) =>
+{
+    var task = tasks.FirstOrDefault(task => task.Id == id);
+
+    if (task is null)
+    {
+        return Results.NotFound();
+    }
+
+    task.IsCompleted = true;
+
+    return Results.Ok(task);
+});
+
+app.MapDelete("/tasks/{id}", (int id) =>
+{
+    var task = tasks.FirstOrDefault(task => task.Id == id);
+    
+    if (task is null)
+    {
+        return Results.NotFound();
+    }
+    
+    tasks.Remove(task);
+    
+    return Results.NoContent();
+});
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+
+class WorkTask
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public bool IsCompleted { get; set; }
 }

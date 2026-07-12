@@ -1,6 +1,22 @@
 @WorkPulse_HostAddress = http://localhost:5176
 
-GET {{WorkPulse_HostAddress}}/weatherforecast/
+GET {{WorkPulse_HostAddress}}/tasks/
 Accept: application/json
 
 ###
+
+POST http://localhost:5176/tasks
+Content-Type: application/json
+
+{
+  "title": "Проверить автоматический ID",
+  "isCompleted": false
+}
+
+###
+
+PATCH http://localhost:5176/tasks/1/complete
+
+###
+
+DELETE http://localhost:5176/tasks/1
