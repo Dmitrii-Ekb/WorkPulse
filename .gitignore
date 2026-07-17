@@ -33,3 +33,7 @@ _ReSharper*/
 packages/
 #Ignore text
 *.docx
+#Ignore db
+workpulse.db
+workpulse.db-shm
+workpulse.db-wal
