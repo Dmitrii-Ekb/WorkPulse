@@ -3,8 +3,17 @@ using WorkPulse;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var connectionString = builder.Configuration.GetConnectionString("WorkPulseDatabase");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Не найдена строка подключения " +
+        "'ConnectionStrings:WorkPulseDatabase'. " +
+        "Проверь файл appsettings.json.");
+}
+
 builder.Services.AddDbContext<WorkPulseDbContext>(options =>
-    options.UseSqlite("Data Source=workpulse.db"));
+    options.UseSqlite(connectionString));
 
 var app = builder.Build();
 
