@@ -22,16 +22,16 @@ app.MapGet("/hello", () =>
     return "Привет, это мой АПИ";
 });
 
-app.MapGet("/tasks", (WorkPulseDbContext db) =>
+app.MapGet("/tasks", async (WorkPulseDbContext db) =>
 {
-    return db.Tasks.ToList();
+    return await db.Tasks.ToListAsync();
 });
 
-app.MapGet("/tasks/first", (WorkPulseDbContext db) =>
+app.MapGet("/tasks/first", async (WorkPulseDbContext db) =>
 {
-    var task = db.Tasks
+    var task = await db.Tasks
         .OrderBy(task => task.Id)
-        .FirstOrDefault();
+        .FirstOrDefaultAsync();
 
     if (task is null)
     {
@@ -41,9 +41,9 @@ app.MapGet("/tasks/first", (WorkPulseDbContext db) =>
     return Results.Ok(task);
 });
 
-app.MapGet("/tasks/{id}", (int id, WorkPulseDbContext db) =>
+app.MapGet("/tasks/{id}", async (int id, WorkPulseDbContext db) =>
 {
-    var task = db.Tasks.Find(id);
+    var task = await db.Tasks.FindAsync(id);
 
     if (task is null)
     {
@@ -53,7 +53,7 @@ app.MapGet("/tasks/{id}", (int id, WorkPulseDbContext db) =>
     return Results.Ok(task);
 });
 
-app.MapPost("/tasks", (CreateWorkTaskDto request, WorkPulseDbContext db) =>
+app.MapPost("/tasks", async (CreateWorkTaskDto request, WorkPulseDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(request.Title))
     {
@@ -67,14 +67,14 @@ app.MapPost("/tasks", (CreateWorkTaskDto request, WorkPulseDbContext db) =>
     };
 
     db.Tasks.Add(newTask);
-    db.SaveChanges();
+    await db.SaveChangesAsync();
 
     return Results.Created($"/tasks/{newTask.Id}", newTask);
 });
 
-app.MapPatch("/tasks/{id}/complete", (int id, WorkPulseDbContext db) =>
+app.MapPatch("/tasks/{id}/complete", async (int id, WorkPulseDbContext db) =>
 {
-    var task = db.Tasks.Find(id);
+    var task = await db.Tasks.FindAsync(id);
 
     if (task is null)
     {
@@ -82,14 +82,14 @@ app.MapPatch("/tasks/{id}/complete", (int id, WorkPulseDbContext db) =>
     }
 
     task.IsCompleted = true;
-    db.SaveChanges();
+    await db.SaveChangesAsync();
 
     return Results.Ok(task);
 });
 
-app.MapDelete("/tasks/{id}", (int id, WorkPulseDbContext db) =>
+app.MapDelete("/tasks/{id}", async (int id, WorkPulseDbContext db) =>
 {
-    var task = db.Tasks.Find(id);
+    var task = await db.Tasks.FindAsync(id);
 
     if (task is null)
     {
@@ -97,7 +97,7 @@ app.MapDelete("/tasks/{id}", (int id, WorkPulseDbContext db) =>
     }
 
     db.Tasks.Remove(task);
-    db.SaveChanges();
+    await db.SaveChangesAsync();
 
     return Results.NoContent();
 });
