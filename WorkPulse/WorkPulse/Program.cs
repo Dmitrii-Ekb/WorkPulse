@@ -53,17 +53,23 @@ app.MapGet("/tasks/{id}", (int id, WorkPulseDbContext db) =>
     return Results.Ok(task);
 });
 
-app.MapPost("/tasks", (WorkTask task, WorkPulseDbContext db) =>
+app.MapPost("/tasks", (CreateWorkTaskDto request, WorkPulseDbContext db) =>
 {
-    if (string.IsNullOrWhiteSpace(task.Title))
+    if (string.IsNullOrWhiteSpace(request.Title))
     {
         return Results.BadRequest("Название задачи обязательно");
     }
+    
+    var newTask = new WorkTask
+    {
+        Title = request.Title,
+        IsCompleted = false
+    };
 
-    db.Tasks.Add(task);
+    db.Tasks.Add(newTask);
     db.SaveChanges();
 
-    return Results.Created($"/tasks/{task.Id}", task);
+    return Results.Created($"/tasks/{newTask.Id}", newTask);
 });
 
 app.MapPatch("/tasks/{id}/complete", (int id, WorkPulseDbContext db) =>

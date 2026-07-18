@@ -1,7 +1,6 @@
 @WorkPulse_HostAddress = http://localhost:5176
 
-GET {{WorkPulse_HostAddress}}/tasks/
-Accept: application/json
+GET http://localhost:5176/tasks
 
 ###
 
@@ -9,8 +8,6 @@ POST http://localhost:5176/tasks
 Content-Type: application/json
 
 {
-  "title": "Таска",
-  "isCompleted": false
 }
 
 ###
@@ -19,4 +16,4 @@ PATCH http://localhost:5176/tasks/1/complete
 
 ###
 
-DELETE http://localhost:5176/tasks/1
+DELETE http://localhost:5176/tasks/1004
