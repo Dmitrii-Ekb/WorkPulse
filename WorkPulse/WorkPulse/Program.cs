@@ -97,11 +97,3 @@ app.MapDelete("/tasks/{id}", (int id, WorkPulseDbContext db) =>
 });
 
 app.Run();
-
-
-public class WorkTask
-{
-    public int Id { get; set; }
-    public string Title { get; set; } = "";
-    public bool IsCompleted { get; set; }
-}
