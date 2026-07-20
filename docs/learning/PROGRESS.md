@@ -1,30 +1,55 @@
 # Прогресс обучения WorkPulse
 
-Обновлено: **2026-07-19**
+Обновлено: **2026-07-20**
 
 ## Текущая точка
 
 WorkPulse — работающий Minimal API на .NET 9 с постоянным хранением задач в SQLite через Entity Framework Core 9.0.17.
 
-Текущий CRUD полностью работает и использует асинхронные операции EF Core. Ученик увидел и разобрал SQL, который EF Core создаёт для чтения, создания, изменения и удаления задач.
+Текущий CRUD использует асинхронные операции EF Core. Завершены две связанные практические темы:
 
-Завершена практическая тема:
+1. базовые SQL-команды написаны вручную на текущей SQLite-базе;
+2. модель задачи расширена необязательным описанием через вторую миграцию.
+
+Текущая вертикальная цепочка:
 
 ```text
-LINQ на C#
+HTTP-запрос
     ↓
-EF Core строит SQL-команду
+CreateWorkTaskDto
     ↓
-SQLite выполняет SQL
+валидация
     ↓
-EF Core создаёт C#-объекты
+WorkTask
     ↓
-Minimal API формирует HTTP-ответ
+DbContext и EF Core
+    ↓
+SQL-команда с параметрами
+    ↓
+SQLite
+    ↓
+C#-объект
+    ↓
+HTTP-ответ
 ```
 
-Следующая учебная точка — **короткая практика написания базового SQL вручную на текущей SQLite-базе**, после чего перейти ко второй миграции на полезном изменении модели.
+Новое поле `Description` прошло полный цикл:
 
-`LEARNING.md` менять не требуется: правила обучения не изменились.
+```text
+JSON description
+    ↓
+CreateWorkTaskDto.Description
+    ↓
+WorkTask.Description
+    ↓
+EF Core
+    ↓
+Tasks.Description
+    ↓
+GET возвращает description
+```
+
+Следующая учебная точка — обсудить границы HTTP-контракта и решить, когда нужен отдельный DTO ответа. После этого перейти к первому интеграционному тесту.
 
 ## Актуальное состояние репозитория
 
@@ -40,15 +65,21 @@ Dmitrii-Ekb/WorkPulse
 master
 ```
 
-Последние завершённые коммиты перед текущим занятием:
+Последний завершённый коммит в удалённом репозитории перед текущими локальными изменениями:
 
 ```text
-9bfd87dca77bbc03121e65769695a472138cbf47
-refactor: make EF Core operations asynchronous
-
-df5fae7357da420f179197bdebd480aefa524ef1
-docs: synchronize learning documents after asynchronous step
+16e95af72bda0ba81ff0af685637990c28bd3c83
+docs: synchronize learning documents after SQL inspection
 ```
+
+Текущие изменения занятия пока могут находиться только в локальной рабочей копии:
+
+- добавлено `WorkTask.Description`;
+- добавлено `CreateWorkTaskDto.Description`;
+- обновлён `POST /tasks`;
+- создана миграция `AddTaskDescription`;
+- миграция применена к локальной базе;
+- проверены создание и чтение задач с описанием и без него.
 
 ## Текущее состояние проекта
 
@@ -60,11 +91,12 @@ docs: synchronize learning documents after asynchronous step
 - Entity Framework Core 9.0.17;
 - SQLite;
 - `dotnet-ef` 9.0.17;
-- HTTP-запросы через `WorkPulse.http`.
+- HTTP-запросы через `WorkPulse.http`;
+- Rider Database Tools для просмотра SQLite и выполнения ручного SQL.
 
-### Модель базы данных
+### Модель задачи
 
-Сущность находится в отдельном файле `WorkTask.cs`:
+Сущность находится в `WorkTask.cs`:
 
 ```csharp
 namespace WorkPulse;
@@ -73,21 +105,42 @@ public class WorkTask
 {
     public int Id { get; set; }
     public string Title { get; set; } = "";
+    public string? Description { get; set; }
     public bool IsCompleted { get; set; }
 }
+```
+
+Назначение свойств:
+
+```text
+Id           — идентификатор, назначается SQLite
+Title        — обязательный заголовок
+Description  — необязательное описание
+IsCompleted  — признак завершения
 ```
 
 Соответствие модели таблице:
 
 ```text
-WorkTask.Id          → Tasks.Id
-WorkTask.Title       → Tasks.Title
-WorkTask.IsCompleted → Tasks.IsCompleted
+WorkTask.Id           → Tasks.Id
+WorkTask.Title        → Tasks.Title
+WorkTask.Description  → Tasks.Description
+WorkTask.IsCompleted  → Tasks.IsCompleted
 ```
 
-### Входной DTO
+### Nullable-свойство
 
-Для создания задачи используется `CreateWorkTaskDto`:
+```csharp
+public string? Description { get; set; }
+```
+
+Свойство может содержать строку или `null`. В текущем продуктовом сценарии `null` означает, что описание пока не указано.
+
+Инициализатор `= "";` не требуется, потому что `null` является допустимым состоянием свойства.
+
+Пустая строка и `null` не считаются полностью одинаковыми. Нормализация пустого описания пока не реализована и будет обсуждаться при развитии валидации.
+
+### Входной DTO
 
 ```csharp
 namespace WorkPulse;
@@ -95,28 +148,21 @@ namespace WorkPulse;
 public class CreateWorkTaskDto
 {
     public string Title { get; set; } = "";
+    public string? Description { get; set; }
 }
 ```
 
-Цепочка создания:
+Клиент управляет:
 
-```text
-JSON
-  ↓
-CreateWorkTaskDto
-  ↓ валидация
-new WorkTask
-  ↓
-EF Core
-  ↓
-SQLite
-```
+- `Title`;
+- необязательным `Description`.
 
-Клиент управляет только `Title`.
+Клиент не управляет:
 
-- `Id` назначает SQLite;
-- `IsCompleted` при создании устанавливает сервер;
-- DTO не входит в модель EF Core и не требует миграции.
+- `Id`;
+- начальным значением `IsCompleted`.
+
+DTO не входит в модель EF Core. Изменение только DTO не требует миграции.
 
 ### Контекст базы данных
 
@@ -146,25 +192,99 @@ public class WorkPulseDbContext : DbContext
 В `Program.cs` строка подключения:
 
 - читается через `GetConnectionString("WorkPulseDatabase")`;
-- проверяется на `null`, пустое значение и пробелы;
+- проверяется на `null`, пустую строку и пробелы;
 - передаётся в `UseSqlite`;
 - при неправильной настройке приложение завершается с понятной ошибкой.
 
+## Схема базы данных
+
+### Таблица `Tasks`
+
+```text
+Id           INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL
+Title        TEXT NOT NULL
+Description  TEXT NULL
+IsCompleted  INTEGER NOT NULL
+```
+
+`Description` допускает `NULL`, поэтому после применения миграции существующие задачи сохранились, а новое значение у них стало `NULL`.
+
 ### Миграции
 
-Создана и применена миграция:
+Созданы и применены:
 
 ```text
 InitialCreate
+AddTaskDescription
 ```
 
-Она создаёт таблицу `Tasks`:
+Миграция `AddTaskDescription`:
 
-- `Id` — `INTEGER`, первичный ключ, `AUTOINCREMENT`;
-- `Title` — `TEXT NOT NULL`;
-- `IsCompleted` — `INTEGER NOT NULL`.
+```csharp
+protected override void Up(MigrationBuilder migrationBuilder)
+{
+    migrationBuilder.AddColumn<string>(
+        name: "Description",
+        table: "Tasks",
+        type: "TEXT",
+        nullable: true);
+}
+```
 
-Локальные файлы SQLite исключены через `.gitignore`, а папка `Migrations` хранится в Git.
+Откат:
+
+```csharp
+protected override void Down(MigrationBuilder migrationBuilder)
+{
+    migrationBuilder.DropColumn(
+        name: "Description",
+        table: "Tasks");
+}
+```
+
+При выполнении `Down` удаляется колонка и все сохранённые в ней описания.
+
+### Как EF Core создаёт миграцию
+
+При выполнении:
+
+```bash
+dotnet ef migrations add MigrationName
+```
+
+EF Core сравнивает:
+
+```text
+текущую модель C#
+        ↕
+WorkPulseContextModelSnapshot
+```
+
+EF Core не определяет изменения путём прямого сравнения C#-модели с текущей SQLite-базой.
+
+Если модель не изменилась, новая миграция обычно будет пустой. Пустая миграция допустима, но без практической причины только засоряет историю.
+
+### Как EF Core узнаёт, что миграция применена
+
+В базе существует служебная таблица:
+
+```text
+__EFMigrationsHistory
+```
+
+После успешного `database update` EF Core записывает туда идентификатор миграции.
+
+```text
+файл миграции
+        ↓
+dotnet ef database update
+        ↓
+выполнен Up
+        ↓
+запись добавлена в __EFMigrationsHistory
+```
+
+Ручное изменение схемы базы может рассинхронизировать реальное состояние SQLite и историю EF Core.
 
 ## Реализованные маршруты
 
@@ -176,119 +296,61 @@ InitialCreate
 - `PATCH /tasks/{id}/complete`;
 - `DELETE /tasks/{id}`.
 
-### `GET /tasks`
-
-```csharp
-app.MapGet("/tasks", async (WorkPulseDbContext db) =>
-{
-    return await db.Tasks.ToListAsync();
-});
-```
-
-Пример SQL:
-
-```sql
-SELECT "t"."Id", "t"."IsCompleted", "t"."Title"
-FROM "Tasks" AS "t";
-```
-
-### `GET /tasks/first`
-
-```csharp
-var task = await db.Tasks
-    .OrderBy(task => task.Id)
-    .FirstOrDefaultAsync();
-```
-
-`OrderBy` строит запрос, а `FirstOrDefaultAsync` выполняет его.
-
-Пример SQL:
-
-```sql
-SELECT "t"."Id", "t"."IsCompleted", "t"."Title"
-FROM "Tasks" AS "t"
-ORDER BY "t"."Id"
-LIMIT 1;
-```
-
-### `GET /tasks/{id}`
-
-```csharp
-var task = await db.Tasks.FindAsync(id);
-```
-
-Поиск выполняется по первичному ключу. При отсутствии задачи возвращается `null`, после чего endpoint отвечает `404 Not Found`.
-
 ### `POST /tasks`
 
 ```csharp
-db.Tasks.Add(newTask);
-await db.SaveChangesAsync();
+app.MapPost("/tasks", async (
+    CreateWorkTaskDto request,
+    WorkPulseDbContext db) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Title))
+    {
+        return Results.BadRequest("Название задачи обязательно");
+    }
+
+    var newTask = new WorkTask
+    {
+        Title = request.Title,
+        Description = request.Description,
+        IsCompleted = false
+    };
+
+    db.Tasks.Add(newTask);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/tasks/{newTask.Id}", newTask);
+});
 ```
 
-- `Add` переводит сущность в состояние `Added`;
-- `SaveChangesAsync` отправляет `INSERT`;
-- SQLite возвращает созданный `Id`;
-- EF Core записывает его в `newTask.Id`.
+Путь данных:
 
-Пример SQL:
-
-```sql
-INSERT INTO "Tasks" ("IsCompleted", "Title")
-VALUES (@p0, @p1)
-RETURNING "Id";
+```text
+JSON
+  ↓
+CreateWorkTaskDto
+  ↓
+new WorkTask
+  ↓
+db.Tasks.Add
+  ↓
+SaveChangesAsync
+  ↓
+INSERT
+  ↓
+SQLite
 ```
 
-### `PATCH /tasks/{id}/complete`
+Запрос с описанием успешно вернул `201 Created`, сохранил описание и вернул его в ответе.
 
-```csharp
-var task = await db.Tasks.FindAsync(id);
-task.IsCompleted = true;
-await db.SaveChangesAsync();
+Запрос без описания успешно вернул `201 Created`, а свойство получило значение:
+
+```json
+"description": null
 ```
 
-Последовательность:
-
-1. `FindAsync` выполняет `SELECT`;
-2. свойство меняется в C#-объекте;
-3. EF Core замечает изменение;
-4. `SaveChangesAsync` выполняет `UPDATE`.
-
-Пример SQL:
-
-```sql
-UPDATE "Tasks"
-SET "IsCompleted" = @p0
-WHERE "Id" = @p1
-RETURNING 1;
-```
-
-`Title` не попадает в `SET`, потому что он не изменялся.
-
-### `DELETE /tasks/{id}`
-
-```csharp
-var task = await db.Tasks.FindAsync(id);
-db.Tasks.Remove(task);
-await db.SaveChangesAsync();
-```
-
-- `FindAsync` загружает сущность с её `Id`;
-- `Remove` переводит сущность в состояние `Deleted`;
-- `SaveChangesAsync` отправляет `DELETE`;
-- первичный ключ берётся из отслеживаемого объекта.
-
-Пример SQL:
-
-```sql
-DELETE FROM "Tasks"
-WHERE "Id" = @p0
-RETURNING 1;
-```
+`GET /tasks/{id}` вернул ранее сохранённое описание.
 
 ## Завершённая тема: SQL, создаваемый EF Core
-
-### Цепочка выполнения
 
 Разобрана цепочка:
 
@@ -306,19 +368,15 @@ SQLite
 C#-результат
 ```
 
-### Построение запроса и выполнение
-
-Не выполняют запрос немедленно:
+Строят запрос, но не выполняют его немедленно:
 
 ```csharp
 db.Tasks
-.Where(...)
-.OrderBy(...)
+    .Where(...)
+    .OrderBy(...);
 ```
 
-Они строят описание будущего запроса.
-
-Выполняют запрос:
+Выполняют запрос или изменение:
 
 ```csharp
 ToListAsync()
@@ -327,115 +385,82 @@ FindAsync()
 SaveChangesAsync()
 ```
 
-### Эксперимент с отложенным выполнением
-
-Проверено на практике:
-
-```csharp
-var query = db.Tasks
-    .OrderBy(task => task.Id);
-
-Console.WriteLine("Запрос построен");
-
-var tasks = await query.ToListAsync();
-
-Console.WriteLine("Запрос выполнен");
-```
-
-Порядок сообщений:
-
-```text
-Запрос построен
-SQL-команда EF Core
-Запрос выполнен
-```
-
-Следовательно, переменная `query` содержала не список задач, а описание будущего запроса.
-
-### `Where`
-
-Пример LINQ:
-
-```csharp
-.Where(task => !task.IsCompleted)
-```
-
-Пример SQL:
-
-```sql
-WHERE NOT ("t"."IsCompleted")
-```
-
-`Where` добавляет условие фильтрации, но сам не отправляет запрос в SQLite.
-
-### `OrderBy`
-
-Пример LINQ:
-
-```csharp
-.OrderBy(task => task.Id)
-```
-
-Пример SQL:
-
-```sql
-ORDER BY "t"."Id"
-```
-
-Сортировку выполняет SQLite. C# получает уже отсортированный результат.
-
-### `FirstOrDefaultAsync`
-
-Метод:
-
-- возвращает первый найденный объект;
-- ограничивает результат через `LIMIT 1`;
-- возвращает `null`, если объект не найден;
-- не бросает исключение только из-за отсутствия строк.
-
-### SQL-параметры
-
-Пример:
-
-```sql
-VALUES (@p0, @p1)
-```
-
-EF Core создаёт в оперативной памяти объект команды, в котором находятся:
-
-```text
-CommandText
-Parameters
-```
-
-Упрощённо:
-
-```text
-SQL: INSERT ... VALUES (@p0, @p1)
-
-Parameters:
-@p0 = false
-@p1 = "Название задачи"
-```
-
-Связку определяет EF Core:
-
-```sql
-("IsCompleted", "Title")
-VALUES (@p0, @p1)
-```
-
-Имена `@p0`, `@p1`, `@__p_0` временные и сами по себе не имеют предметного смысла.
-
-Значения скрываются в обычных логах знаком `?`, потому что параметры могут содержать конфиденциальные данные.
-
-### Сопоставление CRUD и SQL
+Сопоставление CRUD и SQL:
 
 ```text
 ToListAsync / FirstOrDefaultAsync / FindAsync → SELECT
 Add + SaveChangesAsync                       → INSERT
 изменение свойства + SaveChangesAsync        → UPDATE
 Remove + SaveChangesAsync                    → DELETE
+```
+
+## Завершённая тема: ручная практика SQL
+
+SQL выполнялся в Query Console Rider для локального файла `workpulse.db`.
+
+### Выборка всех задач
+
+```sql
+SELECT Id, Title, IsCompleted
+FROM Tasks;
+```
+
+### Фильтрация
+
+```sql
+SELECT Id, Title, IsCompleted
+FROM Tasks
+WHERE IsCompleted = 0;
+```
+
+### Сортировка
+
+```sql
+SELECT Id, Title, IsCompleted
+FROM Tasks
+WHERE IsCompleted = 0
+ORDER BY Id DESC;
+```
+
+### Создание тестовой строки
+
+```sql
+INSERT INTO Tasks (Title, IsCompleted)
+VALUES ('SQL test task', 0);
+```
+
+### Обновление тестовой строки
+
+```sql
+UPDATE Tasks
+SET IsCompleted = 1
+WHERE Id = 1006;
+```
+
+### Удаление тестовой строки
+
+```sql
+DELETE FROM Tasks
+WHERE Id = 1006;
+```
+
+После удаления проверочный `SELECT` вернул ноль строк. Тестовая запись удалена, production-код ради ручного SQL не изменялся.
+
+Ученик самостоятельно написал и объяснил:
+
+```text
+SELECT       — прочитать данные
+WHERE        — отфильтровать строки
+ORDER BY     — отсортировать результат
+INSERT INTO  — создать строку
+UPDATE SET   — изменить данные
+DELETE FROM  — удалить строку
+```
+
+Критическое правило закреплено:
+
+```text
+UPDATE и DELETE без WHERE могут затронуть все строки таблицы.
 ```
 
 ## Проверенное поведение
@@ -448,12 +473,15 @@ Remove + SaveChangesAsync                    → DELETE
 - пустой или состоящий из пробелов `Title` возвращает `400 Bad Request`;
 - клиентские `id` и `isCompleted` не управляют создаваемой сущностью;
 - `Id` назначается SQLite;
+- задача может создаваться с описанием и без него;
+- отсутствие `description` в JSON приводит к `Description = null`;
+- `Description` сохраняется в SQLite и возвращается через GET;
 - `PATCH` сохраняет `IsCompleted = true`;
 - `DELETE` возвращает `204 No Content`;
-- повторный запрос удалённой задачи возвращает `404`;
 - данные сохраняются после перезапуска приложения;
-- асинхронность не изменила HTTP-контракт;
-- после временных SQL-экспериментов `GET /tasks` возвращён в исходное состояние.
+- миграция `AddTaskDescription` сохраняет старые строки;
+- старые строки получают `Description = NULL`;
+- асинхронность не изменила HTTP-контракт.
 
 ## Уже изучено на практике
 
@@ -464,151 +492,77 @@ Remove + SaveChangesAsync                    → DELETE
 - классы, объекты и свойства;
 - ссылочная природа объектов на базовом уровне;
 - `null`;
+- nullable reference types на базовом примере `string?`;
 - строки и `string.IsNullOrWhiteSpace`;
 - условия и ранний `return`;
 - интерполяция строк;
-- лямбда-выражения;
+- лямда-выражения;
 - базовый LINQ;
-- `Where`;
-- `OrderBy`;
-- `FirstOrDefault` и `FirstOrDefaultAsync`;
-- `ToList` и `ToListAsync`;
+- `Where`, `OrderBy`, `FirstOrDefault`, `ToList`;
 - создание объекта одного типа из данных другого типа;
-- разные классы остаются разными типами;
 - организация классов по отдельным файлам;
-- асинхронные лямбды;
 - `Task`, `async`, `await` на базовом практическом уровне.
-
-### Асинхронность
-
-Ученик может объяснить:
-
-- обработчик выполняет код HTTP-запроса;
-- поток является исполнителем кода;
-- незавершённый `await` приостанавливает продолжение обработчика;
-- поток возвращается в пул;
-- продолжение может выполнить другой свободный поток;
-- `async` не создаёт новый поток автоматически;
-- асинхронность полезна при ожидании базы, сети и файлов;
-- обычные вычисления не становятся автоматически быстрее;
-- зависимые операции выполняются последовательно.
 
 ### HTTP и ASP.NET Core
 
 - Minimal API;
 - маршруты и обработчики;
-- параметры маршрута;
 - GET, POST, PATCH, DELETE;
 - JSON-запрос и JSON-ответ;
-- коды `200`, `201`, `204`, `400`, `404`, базовое понимание `500`;
+- коды `200`, `201`, `204`, `400`, `404`;
 - DTO входного запроса;
+- необязательные свойства входного JSON;
 - валидация;
 - ограничение полей клиента;
 - базовая проблема overposting;
-- получение `DbContext` через dependency injection.
+- dependency injection `DbContext`.
 
 ### Базы данных и SQL
 
 - база данных и СУБД;
 - реляционная таблица;
-- строка, столбец, тип данных;
-- схема;
-- первичный ключ;
-- автоинкремент;
+- строка, столбец, тип данных и схема;
+- первичный ключ и автоинкремент;
 - SQLite;
-- `SELECT`, `INSERT`, `UPDATE`, `DELETE`;
-- `WHERE`, `ORDER BY`, `LIMIT` на уровне чтения сгенерированного SQL;
+- ручные `SELECT`, `WHERE`, `ORDER BY`, `INSERT`, `UPDATE`, `DELETE`;
 - SQL-параметры;
 - опасность `UPDATE` и `DELETE` без `WHERE`;
-- постоянное хранение данных.
+- nullable-колонка;
+- сохранение старых строк при расширении схемы.
 
 ### Entity Framework Core
 
 - EF Core как ORM, а не база данных;
-- SQLite-провайдер;
-- `DbContext`;
-- `DbSet<T>`;
-- регистрация контекста;
-- миграции;
-- `Up`, `Down`, `__EFMigrationsHistory`;
+- `DbContext` и `DbSet<T>`;
+- `InitialCreate`;
+- `AddTaskDescription`;
+- `Up`, `Down`, `ModelSnapshot`, `__EFMigrationsHistory`;
+- отличие создания миграции от её применения;
+- поведение пустой миграции;
+- Change Tracker на базовом уровне;
 - `Add`, `Remove`, изменение свойства;
-- состояния сущностей на базовом уровне;
-- `SaveChanges` и `SaveChangesAsync`;
+- `SaveChangesAsync`;
 - отложенное выполнение LINQ;
 - перевод LINQ в SQL;
-- материализация результата в C#-объекты;
+- материализация C#-объектов;
 - полный асинхронный CRUD.
-
-### Git
-
-- `git status`;
-- `git add`;
-- `git commit`;
-- `git push`;
-- локальный коммит и отправка на GitHub;
-- миграции хранятся в Git;
-- локальная SQLite-база не хранится в Git;
-- после завершённого этапа ученик самостоятельно выполняет commit и push.
-
-## Проведённые эксперименты и найденные ошибки
-
-1. Индекс массива был ошибочно принят за `Id` сущности.
-2. Несуществующий индекс вызвал `IndexOutOfRangeException`.
-3. Поиск по свойству `Id` заменил зависимость от позиции элемента.
-4. `FirstOrDefault` вернул объект или `null`.
-5. Анонимный объект нельзя изменять как обычную сущность.
-6. Массив не поддерживает `Add`, поэтому использован `List<T>`.
-7. Неверное тело HTTP-запроса не заполнило `Title`.
-8. Валидация должна выполняться до добавления сущности.
-9. Клиентский `Id` оказался небезопасным при хранении в списке.
-10. `Max` на пустом списке потребовал отдельной обработки.
-11. Изменение объекта через другую переменную изменило тот же объект.
-12. Хранение в памяти потеряло данные после перезапуска.
-13. `Microsoft.EntityFrameworkCore.Design` не устанавливает `dotnet ef` автоматически.
-14. Создана и разобрана первая миграция.
-15. После `database update` появилась реальная таблица SQLite.
-16. Без `SaveChanges` изменения не записываются в базу.
-17. Небезопасный `/tasks/first` заменён вариантом с `404`.
-18. Неверная строка подключения дала раннюю понятную ошибку.
-19. Перенос `WorkTask` в отдельный файл не потребовал миграции.
-20. `CreateWorkTaskDto` нельзя передать в `DbSet<WorkTask>`.
-21. Явное создание `WorkTask` отделило DTO от сущности.
-22. Дополнительные JSON-поля не управляют сущностью через DTO.
-23. DTO не потребовал миграции.
-24. Асинхронные методы сохранили прежнее HTTP-поведение.
-25. `Add` и `Remove` не выполняют SQL немедленно.
-26. `SaveChangesAsync` выполняет реальные команды изменения.
-27. `OrderBy` добавил `ORDER BY`, но не выполнил запрос.
-28. SQL появился только при `ToListAsync`.
-29. `Where` добавил условие `WHERE`.
-30. `FirstOrDefaultAsync` добавил `LIMIT 1`.
-31. Отсутствие совпадений вернуло `null`.
-32. `INSERT` использовал параметры и `RETURNING "Id"`.
-33. `UPDATE` изменил только `IsCompleted`.
-34. `DELETE` использовал первичный ключ отслеживаемой сущности.
-35. Значения параметров в обычном логе были скрыты знаком `?`.
 
 ## Введено, но пока не считать уверенно изученным
 
+- nullable reference types системно;
+- разница между `null`, пустой строкой и отсутствующим JSON-свойством во всех сценариях;
 - методы класса как отдельная тема;
 - конструкторы глубже текущего использования;
 - значимые и ссылочные типы системно;
-- nullable reference types;
-- исключения глубже `InvalidOperationException`;
-- делегаты;
-- обобщения системно;
+- исключения глубже текущих примеров;
+- делегаты и обобщения системно;
 - жизненный цикл `DbContext` глубже текущей практики;
-- состояния EF Core глубже `Added`, `Modified`, `Deleted`;
-- ручное написание SQL;
-- внешние ключи;
-- связи таблиц;
-- `JOIN`;
-- индексы;
-- уникальные ограничения;
-- транзакции;
+- изменение и удаление миграций в разных состояниях;
+- сложный SQL;
+- внешние ключи, связи и `JOIN`;
+- индексы, уникальные ограничения и транзакции;
 - DTO ответа;
-- middleware;
-- контроллеры;
+- middleware и контроллеры;
 - автоматическое тестирование;
 - авторизация;
 - Docker и развёртывание;
@@ -616,56 +570,59 @@ Remove + SaveChangesAsync                    → DELETE
 
 ## Уровень и стиль обучения
 
-Исходный уровень:
-
-- основы синтаксиса C# знакомы;
-- ООП почти с нуля;
-- Web API и ASP.NET Core с нуля;
-- Git на начальном уровне;
-- архитектура почти с нуля.
-
-Подход:
-
 - обучение через один реальный проект WorkPulse;
 - один небольшой шаг за раз;
-- сначала изменение и эксперимент, затем объяснение;
+- сначала изменение или эксперимент, затем объяснение;
 - ученик регулярно формулирует происходящее своими словами;
-- тема не считается изученной после копирования кода;
 - теория вводится только при практической необходимости;
 - не вводить сложную архитектуру раньше времени;
+- не выполнять отдельную сборку после очевидного безопасного однострочного изменения;
+- выполнять сборку, запуск или тест после значимого набора изменений;
 - после завершённого этапа предложить название коммита;
 - commit и push ученик выполняет самостоятельно;
 - Git подробно разбирать только при ошибке или новой теме.
 
 ## Следующий конкретный шаг
 
-### Короткая ручная практика SQL
+### Границы HTTP-контракта
 
-На текущей базе `workpulse.db` выполнить несколько запросов вручную вне production-кода:
+Обсудить текущий ответ:
 
-1. простой `SELECT` всех задач;
-2. `SELECT` с `WHERE`;
-3. `SELECT` с `ORDER BY`;
-4. один безопасный эксперимент с `INSERT` на тестовой задаче;
-5. `UPDATE` этой тестовой задачи с обязательным `WHERE`;
-6. `DELETE` этой тестовой задачи с обязательным `WHERE`.
+```csharp
+return Results.Created($"/tasks/{newTask.Id}", newTask);
+```
 
-Цель — не глубокий курс SQL, а подтверждение понимания уже увиденных команд без посредничества EF Core.
+Нужно понять:
 
-После этого:
+1. чем сущность отличается от входного и выходного DTO;
+2. почему изменение сущности может случайно изменить JSON-контракт;
+3. когда отдельный DTO ответа полезен;
+4. почему не нужно добавлять AutoMapper преждевременно.
 
-### Вторая миграция
+После обсуждения принять осознанное решение:
 
-Выбрать одно полезное поле задачи, вероятнее всего `CreatedAt`, `Description`, `DueDate` или `Priority`, и пройти полный цикл:
+- либо пока оставить возврат сущности;
+- либо создать простой `WorkTaskResponseDto` и выполнить явное преобразование.
 
-1. изменить `WorkTask`;
-2. определить, нужно ли менять DTO;
-3. создать миграцию;
-4. прочитать `Up` и `Down`;
-5. применить миграцию;
-6. проверить старые и новые данные;
-7. объяснить переход схемы.
+### После этого
+
+Создать первый интеграционный тест для сценария:
+
+```text
+POST /tasks
+    ↓
+201 Created
+    ↓
+проверка тела ответа
+    ↓
+проверка сохранения данных
+```
 
 ### Небольшая техническая уборка
 
-При подходящем коротком шаге привести `WorkPulse.http` к повторяемому набору запросов без случайных экспериментальных `Id` и временных некорректных тел.
+Привести `WorkPulse.http` к повторяемому набору запросов:
+
+- не использовать случайные локальные `Id`;
+- отделить корректные и некорректные запросы;
+- добавить примеры с `description` и без него;
+- сохранить маршруты GET, POST, PATCH и DELETE.
