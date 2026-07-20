@@ -63,6 +63,7 @@ app.MapPost("/tasks", async (CreateWorkTaskDto request, WorkPulseDbContext db) =
     var newTask = new WorkTask
     {
         Title = request.Title,
+        Description = request.Description,
         IsCompleted = false
     };
 
