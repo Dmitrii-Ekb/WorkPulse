@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkPulse", "WorkPulse\WorkPulse.csproj", "{1FB171F8-5788-4135-A4FF-EED9D9C84C6F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkPulse.IntegrationTests", "WorkPulse.IntegrationTests\WorkPulse.IntegrationTests.csproj", "{A97271A4-BAE7-43D6-9FB5-C9518579E80F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{1FB171F8-5788-4135-A4FF-EED9D9C84C6F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1FB171F8-5788-4135-A4FF-EED9D9C84C6F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1FB171F8-5788-4135-A4FF-EED9D9C84C6F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A97271A4-BAE7-43D6-9FB5-C9518579E80F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A97271A4-BAE7-43D6-9FB5-C9518579E80F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A97271A4-BAE7-43D6-9FB5-C9518579E80F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A97271A4-BAE7-43D6-9FB5-C9518579E80F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

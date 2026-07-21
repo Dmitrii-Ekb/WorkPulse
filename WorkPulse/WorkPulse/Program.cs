@@ -122,3 +122,7 @@ app.MapDelete("/tasks/{id}", async (int id, WorkPulseDbContext db) =>
 });
 
 app.Run();
+
+public partial class Program
+{
+}
