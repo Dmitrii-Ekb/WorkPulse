@@ -72,4 +72,34 @@ public class WorkPulseApiTests
         Assert.Equal(request.Description, savedTask.Description);
         Assert.False(savedTask.IsCompleted);
     }
+    
+    [Fact]
+    public async Task CreateTask_WithEmptyTitle_ReturnsBadRequest()
+    {
+        // Arrange
+        var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient();
+
+        using var scope = factory.Services.CreateScope();
+
+        var db = scope.ServiceProvider
+            .GetRequiredService<WorkPulseDbContext>();
+
+        await db.Database.EnsureCreatedAsync();
+        
+        var request = new CreateWorkTaskDto
+        {
+            Title = "",
+            Description = "Задача не должна сохраниться"
+        };
+
+        // Act
+        var response = await client.PostAsJsonAsync("/tasks", request);
+        
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        
+        var taskCount = await db.Tasks.CountAsync();
+        Assert.Equal(0, taskCount);
+    }
 }
