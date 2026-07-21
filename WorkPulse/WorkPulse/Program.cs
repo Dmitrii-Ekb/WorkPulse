@@ -24,7 +24,17 @@ app.MapGet("/hello", () =>
 
 app.MapGet("/tasks", async (WorkPulseDbContext db) =>
 {
-    return await db.Tasks.ToListAsync();
+    var responses = await db.Tasks
+        .Select(task => new WorkTaskResponseDto
+        {
+            Id = task.Id,
+            Title = task.Title,
+            Description = task.Description,
+            IsCompleted = task.IsCompleted
+        })
+        .ToListAsync();
+    
+    return responses;
 });
 
 app.MapGet("/tasks/first", async (WorkPulseDbContext db) =>
@@ -38,7 +48,9 @@ app.MapGet("/tasks/first", async (WorkPulseDbContext db) =>
         return Results.NotFound();
     }
 
-    return Results.Ok(task);
+    var response = WorkTaskResponseDto.FromEntity(task);
+
+    return Results.Ok(response);
 });
 
 app.MapGet("/tasks/{id}", async (int id, WorkPulseDbContext db) =>
@@ -49,8 +61,10 @@ app.MapGet("/tasks/{id}", async (int id, WorkPulseDbContext db) =>
     {
         return Results.NotFound();
     }
+    
+    var response = WorkTaskResponseDto.FromEntity(task);
 
-    return Results.Ok(task);
+    return Results.Ok(response);
 });
 
 app.MapPost("/tasks", async (CreateWorkTaskDto request, WorkPulseDbContext db) =>
@@ -70,7 +84,9 @@ app.MapPost("/tasks", async (CreateWorkTaskDto request, WorkPulseDbContext db) =
     db.Tasks.Add(newTask);
     await db.SaveChangesAsync();
 
-    return Results.Created($"/tasks/{newTask.Id}", newTask);
+    var response = WorkTaskResponseDto.FromEntity(newTask);
+
+    return Results.Created($"/tasks/{newTask.Id}", response);
 });
 
 app.MapPatch("/tasks/{id}/complete", async (int id, WorkPulseDbContext db) =>
@@ -85,7 +101,9 @@ app.MapPatch("/tasks/{id}/complete", async (int id, WorkPulseDbContext db) =>
     task.IsCompleted = true;
     await db.SaveChangesAsync();
 
-    return Results.Ok(task);
+    var response = WorkTaskResponseDto.FromEntity(task);
+
+    return Results.Ok(response);
 });
 
 app.MapDelete("/tasks/{id}", async (int id, WorkPulseDbContext db) =>
