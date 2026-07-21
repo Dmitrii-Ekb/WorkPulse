@@ -1,45 +1,34 @@
 # Прогресс обучения WorkPulse
 
-Обновлено: **2026-07-21**
+Обновлено: **2026-07-22**
 
 ## Текущая точка
 
-WorkPulse — работающий Minimal API на .NET 9 с постоянным хранением задач в SQLite через Entity Framework Core 9.0.17.
+WorkPulse — работающий Minimal API на .NET 9 с хранением задач в SQLite через Entity Framework Core.
 
-Завершён этап разделения внутренней модели и HTTP-контрактов. Теперь используются три типа с разными ролями:
-
-```text
-CreateWorkTaskDto
-клиент → API
-
-WorkTask
-API ↔ EF Core ↔ SQLite
-
-WorkTaskResponseDto
-API → клиент
-```
-
-Сущность `WorkTask` больше не возвращается клиенту напрямую.
-
-Текущая цепочка создания задачи:
+Завершены два первых интеграционных сценария для `POST /tasks`:
 
 ```text
-JSON-запрос
-    ↓
-CreateWorkTaskDto
-    ↓
-валидация
-    ↓
-WorkTask
-    ↓
-EF Core и SQLite
-    ↓
-WorkTaskResponseDto
-    ↓
-JSON-ответ
+корректный запрос
+→ 201 Created
+→ корректный WorkTaskResponseDto
+→ задача действительно сохранена в тестовой базе
 ```
 
-Следующая крупная тема — **первый интеграционный тест API**.
+```text
+пустой Title
+→ 400 Bad Request
+→ тестовая база остаётся пустой
+```
+
+Следующая крупная тема — **редактирование заголовка и описания задачи**.
+
+Перед реализацией нужно разобрать:
+
+- различие `PUT` и `PATCH`;
+- какой контракт запроса нужен для редактирования;
+- как валидировать новый заголовок;
+- как проверить изменение интеграционным тестом.
 
 ## Состояние Git
 
@@ -55,22 +44,20 @@ Dmitrii-Ekb/WorkPulse
 master
 ```
 
-Завершённый функциональный коммит текущего этапа:
+Последние подтверждённые коммиты:
 
 ```text
+902444834f4cca7aa9fdbd00dad24eb374d98aef
+test: add invalid task creation scenario
+
+a3d748d3166b3e310d720394daaffbfe7ccf3748
+test: add integration test for task creation
+
+ca52eeec32bd4034d6bd86d5c8e6acdc069020b0
+docs: synchronize learning documents after response DTO step
+
+551acc95023d5e2d3c255484ab52ce0da7ac0055
 refactor: add response DTO for task endpoints
-```
-
-На момент подготовки документации GitHub-коннектор ещё не показывал этот локальный коммит в удалённой ветке. Документация составлена по фактическому коду, присланному после коммита.
-
-Предыдущие подтверждённые коммиты:
-
-```text
-51b6bf762850a0b40919f3633723610075808f34
-feat: add optional task description
-
-eaee8dc8f1ddc18fdfb6f1d291c9ad8df5f8ce7d
-docs: synchronize learning documents after task description migration
 ```
 
 ## Текущий стек
@@ -80,185 +67,40 @@ docs: synchronize learning documents after task description migration
 - ASP.NET Core Minimal API;
 - Entity Framework Core 9.0.17;
 - SQLite;
-- `dotnet-ef` 9.0.17;
 - LINQ;
-- `WorkPulse.http`;
-- Rider Database Tools.
+- xUnit;
+- `Microsoft.AspNetCore.Mvc.Testing` 9.0.18;
+- `WebApplicationFactory`;
+- Rider;
+- Git и GitHub.
 
-## Сущность `WorkTask`
+## Структура решения
 
-```csharp
-namespace WorkPulse;
-
-public class WorkTask
-{
-    public int Id { get; set; }
-    public string Title { get; set; } = "";
-    public string? Description { get; set; }
-    public bool IsCompleted { get; set; }
-}
-```
-
-Назначение:
-
-- внутренняя модель задачи;
-- участвует в модели EF Core;
-- сопоставляется с таблицей `Tasks`;
-- изменение сохраняемого свойства может потребовать миграцию;
-- не является публичным HTTP-контрактом.
-
-## Входной DTO
-
-```csharp
-namespace WorkPulse;
-
-public class CreateWorkTaskDto
-{
-    public string Title { get; set; } = "";
-    public string? Description { get; set; }
-}
-```
-
-`CreateWorkTaskDto` описывает, что клиент может прислать при создании задачи.
-
-Клиент управляет:
-
-- `Title`;
-- необязательным `Description`.
-
-Клиент не управляет:
-
-- `Id`;
-- начальным `IsCompleted`.
-
-DTO не входит в модель EF Core. Изменение только DTO не требует миграции.
-
-## Выходной DTO
-
-```csharp
-namespace WorkPulse;
-
-public class WorkTaskResponseDto
-{
-    public int Id { get; set; }
-    public string Title { get; set; } = "";
-    public string? Description { get; set; }
-    public bool IsCompleted { get; set; }
-
-    public static WorkTaskResponseDto FromEntity(WorkTask task)
-    {
-        return new WorkTaskResponseDto
-        {
-            Id = task.Id,
-            Title = task.Title,
-            Description = task.Description,
-            IsCompleted = task.IsCompleted
-        };
-    }
-}
-```
-
-`WorkTaskResponseDto` описывает данные, которые API возвращает и гарантирует клиенту.
-
-DTO расшифровывается:
+В solution находятся два проекта:
 
 ```text
-Data Transfer Object
-объект передачи данных
+WorkPulse
+WorkPulse.IntegrationTests
 ```
 
-## Почему сущность не возвращается напрямую
+Основной проект содержит API и работу с SQLite.
 
-Раньше endpoint возвращал:
+Тестовый проект содержит интеграционные тесты и ссылается на основной проект через `ProjectReference`.
 
-```csharp
-return Results.Ok(task);
-```
-
-При таком подходе новое публичное свойство `WorkTask` автоматически могло попасть в JSON.
-
-Риск:
+## Актуальная модель
 
 ```text
-изменили внутреннюю модель
-        ↓
-непреднамеренно изменили публичный API
+CreateWorkTaskDto
+клиент → API
+
+WorkTask
+API ↔ EF Core ↔ SQLite
+
+WorkTaskResponseDto
+API → клиент
 ```
 
-Возможные последствия:
-
-- публикация внутренних данных;
-- нестабильный контракт;
-- неожиданные изменения для клиента;
-- проблемы у строгих или сгенерированных клиентов.
-
-Теперь сервер явно определяет состав ответа.
-
-## Преобразование сущности в DTO
-
-Для одной загруженной сущности:
-
-```csharp
-var response = WorkTaskResponseDto.FromEntity(task);
-```
-
-`FromEntity` статический, потому что готового DTO ещё нет. Метод сам создаёт и возвращает объект.
-
-Преобразование вынесено в одно место, чтобы не повторять одинаковый mapping во многих endpoint-ах.
-
-Это практический пример DRY:
-
-```text
-Don't Repeat Yourself
-не повторяйся
-```
-
-## Проекция списка через `Select`
-
-`GET /tasks` использует:
-
-```csharp
-var responses = await db.Tasks
-    .Select(task => new WorkTaskResponseDto
-    {
-        Id = task.Id,
-        Title = task.Title,
-        Description = task.Description,
-        IsCompleted = task.IsCompleted
-    })
-    .ToListAsync();
-```
-
-Новый LINQ-метод:
-
-```text
-Where  — фильтрует
-Select — преобразует
-```
-
-Цепочка:
-
-```text
-IQueryable<WorkTask>
-        ↓ Select
-IQueryable<WorkTaskResponseDto>
-        ↓ ToListAsync
-List<WorkTaskResponseDto>
-```
-
-EF Core переводит проекцию в SQL и запрашивает необходимые свойства.
-
-Обычный метод `FromEntity` не используется внутри запроса к базе, потому что произвольный C#-метод EF Core обычно не может перевести в SQL.
-
-Различие:
-
-```text
-уже загруженный WorkTask
-→ FromEntity
-
-IQueryable к базе
-→ Select с выражением
-```
+Сущность `WorkTask` больше не возвращается клиенту напрямую.
 
 ## Актуальные маршруты
 
@@ -270,224 +112,263 @@ IQueryable к базе
 - `PATCH /tasks/{id}/complete`;
 - `DELETE /tasks/{id}`.
 
-### `GET /tasks`
+## Создание задачи
 
-Возвращает массив `WorkTaskResponseDto` через `Select`.
+Текущая цепочка:
 
-### `GET /tasks/first`
-
-Получает одну сущность, проверяет `null`, преобразует через `FromEntity` и возвращает один JSON-объект.
-
-Во время занятия была исправлена ошибка: повторный запрос ко всей таблице создавал массив вместо одной задачи.
-
-### `GET /tasks/{id}`
-
-Получает одну сущность через `FindAsync`, возвращает `404`, если задача не найдена, иначе возвращает DTO.
-
-### `POST /tasks`
-
-```csharp
-var newTask = new WorkTask
-{
-    Title = request.Title,
-    Description = request.Description,
-    IsCompleted = false
-};
-
-db.Tasks.Add(newTask);
-await db.SaveChangesAsync();
-
-var response = WorkTaskResponseDto.FromEntity(newTask);
-
-return Results.Created($"/tasks/{newTask.Id}", response);
+```text
+JSON
+↓
+CreateWorkTaskDto
+↓
+валидация Title
+↓
+WorkTask
+↓
+SaveChangesAsync
+↓
+SQLite назначает Id
+↓
+WorkTaskResponseDto
+↓
+201 Created
 ```
 
-DTO создаётся после `SaveChangesAsync`, потому что после сохранения SQLite назначает `Id`.
+Если `Title` пустой или состоит только из пробелов, endpoint возвращает `400 Bad Request` до сохранения в базу.
 
-Проверенный ответ:
+## База данных и миграции
 
-```json
+Используются миграции:
+
+```text
+InitialCreate
+AddTaskDescription
+```
+
+Закреплено:
+
+```text
+ModelSnapshot
+— последнее состояние модели, известное механизму миграций
+
+Up
+— применение изменения
+
+Down
+— обратная операция миграции
+
+__EFMigrationsHistory
+— список миграций, применённых к конкретной базе
+```
+
+Изменение свойства сущности может потребовать миграцию. Изменение только DTO миграции не требует.
+
+## SQL и LINQ
+
+Разобрана цепочка:
+
+```text
+LINQ
+→ EF Core
+→ SQL
+→ SQLite
+→ C#-объекты
+```
+
+Закреплено:
+
+- `Where` добавляет фильтрацию;
+- `Select` преобразует результат;
+- `OrderBy` задаёт сортировку;
+- конечные async-операции выполняют запрос;
+- LINQ-запрос обычно выполняется отложенно;
+- `SaveChangesAsync` формирует команды изменения;
+- без `SaveChangesAsync` объект может существовать в памяти, но строки в базе не будет.
+
+## Интеграционное тестирование
+
+Создан проект:
+
+```text
+WorkPulse.IntegrationTests
+```
+
+Используются:
+
+- xUnit;
+- `Microsoft.AspNetCore.Mvc.Testing`;
+- `WebApplicationFactory<Program>`;
+- SQLite in-memory.
+
+В `Program.cs` добавлен доступный тестовому хосту `public partial class Program`.
+
+### Тестовая фабрика
+
+`CustomWebApplicationFactory`:
+
+- запускает настоящее приложение внутри тестового процесса;
+- создаёт тестовый `HttpClient`;
+- заменяет рабочую регистрацию `WorkPulseDbContext`;
+- регистрирует отдельное SQLite-соединение `Data Source=:memory:`;
+- держит соединение открытым во время теста.
+
+Ключевая модель:
+
+```text
+new CustomWebApplicationFactory()
+→ новое SqliteConnection
+→ новая отдельная SQLite-база в памяти
+```
+
+`scope` не создаёт отдельную базу. Он задаёт область жизни `WorkPulseDbContext` и позволяет получить контекст из DI.
+
+### Структура теста
+
+```text
+Arrange
+→ подготовка приложения, базы и входных данных
+
+Act
+→ выполнение HTTP-запроса
+
+Assert
+→ проверка результата
+```
+
+### Текущие тесты
+
+#### `Hello_ReturnsExpectedResponse`
+
+Проверяет запуск приложения, `GET /hello`, `200 OK`, ожидаемый текст и доступность таблицы `Tasks`.
+
+#### `CreateTask_ReturnsCreatedTask`
+
+Проверяет:
+
+- `POST /tasks`;
+- `201 Created`;
+- чтение JSON как `WorkTaskResponseDto`;
+- `Id > 0`;
+- правильные `Title` и `Description`;
+- `IsCompleted == false`;
+- фактическое сохранение строки в тестовой базе.
+
+Различие:
+
+```text
+createdTask
+→ данные, возвращённые API
+
+savedTask
+→ данные, повторно прочитанные из SQLite
+```
+
+Экспериментально подтверждено:
+
+```text
+убрали SaveChangesAsync
+→ Id остался 0
+→ интеграционный тест упал
+```
+
+#### `CreateTask_WithEmptyTitle_ReturnsBadRequest`
+
+Проверяет:
+
+- запрос с `Title = ""`;
+- `400 Bad Request`;
+- `Tasks.CountAsync() == 0`;
+- некорректная задача не сохраняется.
+
+### Изоляция тестов
+
+Весь набор тестов дважды подряд прошёл успешно.
+
+Причина изоляции:
+
+```text
+каждый тест создаёт собственную фабрику
+→ фабрика создаёт собственное соединение
+→ соединение относится к собственной базе в памяти
+```
+
+Отдельный `scope` управляет жизнью `WorkPulseDbContext`, но не является причиной создания отдельной базы.
+
+## Введённые элементы ООП
+
+Конструкторы и ООП ещё не проходились как отдельная полноценная тема.
+
+На практическом примере введён конструктор:
+
+```csharp
+public CustomWebApplicationFactory()
 {
-  "id": 1009,
-  "title": "Проверить response DTO",
-  "description": "Убедиться, что POST возвращает DTO",
-  "isCompleted": false
+    _connection.Open();
 }
 ```
 
-Идентификатор относится только к локальной учебной базе.
-
-### `PATCH /tasks/{id}/complete`
-
-После изменения и сохранения возвращает DTO. Проверено значение:
-
-```json
-"isCompleted": true
-```
-
-### `DELETE /tasks/{id}`
-
-DTO не нужен, потому что endpoint возвращает:
+Текущая модель понимания:
 
 ```text
-204 No Content
+new CustomWebApplicationFactory()
+→ создаётся объект
+→ автоматически вызывается конструктор
+→ открывается SQLite-соединение
 ```
 
-## Миграции: уточнённая модель
-
-Создание миграции:
-
-```bash
-dotnet ef migrations add MigrationName
-```
-
-Применение:
-
-```bash
-dotnet ef database update
-```
-
-Имя миграции выбирает разработчик. Оно должно описывать изменение.
-
-### `ModelSnapshot`
-
-`WorkPulseDbContextModelSnapshot` хранит последнее состояние модели, известное механизму миграций.
-
-Главное назначение:
-
-```text
-текущая C#-модель
-        ↕ сравнение
-ModelSnapshot
-        ↓
-следующая миграция
-```
-
-Snapshot **не является механизмом отката**.
-
-Откат описывает:
-
-```csharp
-Down(...)
-```
-
-Применённые миграции хранятся в:
-
-```text
-__EFMigrationsHistory
-```
-
-Кратко:
-
-```text
-ModelSnapshot          — основа следующей миграции
-Down                    — обратная операция
-__EFMigrationsHistory  — применённые миграции базы
-```
-
-Сгенерированную миграцию нужно читать. Её можно осознанно редактировать до применения, если разработчик понимает последствия. Особенно рискованно менять миграцию, уже применённую к общей или production-базе.
+Также введено поле класса с `private readonly`. Эти конструкции пока считаются инфраструктурным шаблоном. Полный блок по ООП должен быть пройден позже системно.
 
 ## Проверенное понимание
 
 Ученик может объяснить:
 
-```text
-CreateWorkTaskDto
-— что клиент может прислать
+- роли request DTO, entity и response DTO;
+- почему изменение DTO не требует миграции;
+- почему сущность не нужно возвращать напрямую;
+- цепочку LINQ → EF Core → SQL → SQLite;
+- роль `SaveChangesAsync`;
+- различие unit- и интеграционного теста;
+- структуру Arrange, Act, Assert;
+- роль `WebApplicationFactory` и тестового `HttpClient`;
+- зачем нужна отдельная тестовая база;
+- различие ответа API и состояния базы;
+- почему отдельная фабрика даёт отдельную базу;
+- почему `scope` не равен отдельной базе.
 
-WorkTask
-— как задача представлена внутри приложения и EF Core
+## Технические замечания
 
-WorkTaskResponseDto
-— что сервер возвращает клиенту
-```
+При ближайшем рефакторинге можно:
 
-Также закреплено:
+- удалить неиспользуемый `using Xunit.Abstractions`, если диагностический вывод не используется;
+- добавить завершающий перевод строки в новые файлы;
+- позже оценить повторение Arrange-кода;
+- привести `WorkPulse.http` к повторяемым запросам без жёстко заданных идентификаторов.
 
-- DTO — объект передачи данных;
-- одинаковые свойства не означают одинаковую ответственность классов;
-- внутреннее поле можно добавить только в сущность;
-- публичное поле ответа нужно добавить в response DTO;
-- изменение сущности может потребовать миграцию;
-- изменение только DTO миграции не требует;
-- дублирование mapping-кода становится проблемой при росте проекта;
-- `Select` сначала был объяснён, затем применён;
-- одинаковые механические замены после понимания можно выполнять сразу во всех местах.
+Не создавать сложную тестовую архитектуру преждевременно.
 
-## Уже изучено на практике
+## Следующий этап
 
-### C#
+### Редактирование задачи
 
-- классы, объекты и свойства;
-- `null`, `string?`;
-- создание объектов;
-- статический метод;
-- передача и возврат объекта;
-- DRY на практическом уровне;
-- лямбды;
-- LINQ: `Where`, `OrderBy`, `Select`;
-- `FirstOrDefaultAsync`, `ToListAsync`;
-- `Task`, `async`, `await`.
+Нужно реализовать изменение:
 
-### ASP.NET Core
-
-- Minimal API;
-- входной и выходной JSON;
-- входной и выходной DTO;
-- сущность как внутренняя модель;
-- overposting;
-- контролируемый HTTP-контракт;
-- коды `200`, `201`, `204`, `400`, `404`.
-
-### EF Core и SQL
-
-- `DbContext`, `DbSet<T>`;
-- асинхронный CRUD;
-- Change Tracker;
-- миграции;
-- `Up`, `Down`;
-- `ModelSnapshot`;
-- `__EFMigrationsHistory`;
-- проекция через `Select`;
-- различие LINQ-выражения и обычного C#-метода.
-
-## Введено, но пока не считать уверенно изученным
-
-- методы и `static` системно;
-- DRY глубже текущего примера;
-- expression trees;
-- ограничения перевода C# в SQL;
-- DTO изменения;
-- `record`;
-- AutoMapper и компромиссы;
-- unit-тесты;
-- интеграционные тесты;
-- тестовая база;
-- `WebApplicationFactory`;
-- Arrange, Act, Assert.
-
-## Следующий конкретный шаг
-
-### Первый интеграционный тест
-
-Первый сценарий:
-
-```text
-POST /tasks
-        ↓
-201 Created
-        ↓
-WorkTaskResponseDto
-        ↓
-проверка Id, Title, Description, IsCompleted
-```
+- заголовка;
+- описания.
 
 Перед кодом разобрать:
 
-1. автоматический тест;
-2. unit-тест и интеграционный тест;
-3. Arrange, Act, Assert;
-4. отдельную тестовую базу;
-5. запуск настоящего приложения через тестовый хост.
+1. Семантику `PUT`.
+2. Семантику `PATCH`.
+3. Полная это замена или частичное изменение.
+4. Как будет выглядеть DTO запроса.
+5. Как валидировать заголовок.
+6. Какой статус вернуть для отсутствующей задачи.
+7. Как подтвердить изменение интеграционным тестом.
 
-Не начинать с полного покрытия CRUD. Первая цель — один надёжный тест успешного создания задачи.
+Первый практический шаг:
+
+```text
+сравнить PUT и PATCH
+→ выбрать контракт редактирования WorkPulse
+→ только затем писать endpoint и DTO
+```
